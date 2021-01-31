@@ -30,6 +30,10 @@ In general, units need to be well-isolated in the peri-ictal period without any 
 
 For analyses using template matched data and the original epoch, the template matching should be run on both the _new and the original epoch_, to avoid biasing analyses by spike sorting method.
 
+When denoising detected spikes with ```spike_denoise```, this should be done after spike detection but before clustering or template matching. The default parameters are set up to fairly comprehensively detect slow transients (< 500 Hz) or electrical noise (> 2.5 kHz) in our data, but the discarded waveforms should always be plotted and checked to make sure good waveforms are not being caught, depending on the quality of your recordings. The method uses standard deviations in your specified frequency ranges, so particularly clean or noisy recordings may trip it up.
+
+See the help sections of each function for more in-depth notes.
+
 
 ## Bonus animation!
 
