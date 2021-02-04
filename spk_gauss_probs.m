@@ -44,7 +44,7 @@ for m = 1:size(orig,2)
     pd = fitdist(orig(:,m),'Normal');
     % calculate the probabilities for each new spike's voltage at this time
     probs_raw(:,m) = pd.pdf(new(:,m));
-    % calulcate the actual probability density for a normal distribution
+    % calculate the actual probability density for a normal distribution
     % around the original spikes at this datapoint (because noise should be
     % from background in a cleanly sorted unit, which should be gaussian)
     pdfs(:,m) = pd.pdf(yscale(1):yscale(2));
