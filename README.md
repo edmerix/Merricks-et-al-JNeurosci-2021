@@ -24,7 +24,7 @@ To avoid these dependencies, if only using ≤ 3 dimensions in PC space, the sim
 
 ```gmm_match()``` uses Gaussian mixture models to do template matching as well as the match confidences, bypassing the convex hull. This is useful in stable recordings, to track neurons in a probabilistic manner in the absence of noise that approaches cluster boundaries. __N.B.__ This function is in the process of being updated to allow for match confidences derived from a combination of the posterior probabilities and the original Gaussian fits themselves.
 
-The original ```spk_gaus_probs()``` is what was used in the original paper, but calculates match confidences based on scaled Gaussians to attempt to approximate probabilities of matches. This is necessary because the a value found in the fitted Gaussian corresponds to the probability of picking that waveform from the _true_ original waveforms, __not__ the probability that a new waveform came from that neuron. 
+The original ```spk_gauss_probs()``` is what was used in the original paper, but calculates match confidences based on scaled Gaussians to attempt to approximate probabilities of matches. This is necessary because a value found in the fitted Gaussian corresponds to the probability of picking that waveform from the _known_ original set of waveforms, __not__ the probability that a new waveform came from that neuron. 
 
 ```spk_match_confidence()``` updates this approach to make better use of the Gaussian distributions of the original neuron's waveforms without scaling them. It instead calculates what the probability of selecting a true match from the original unit _farther_ from the mean at each distribution (in either direction) is. See [Fig. 1](#fig1) immediately below:
 
