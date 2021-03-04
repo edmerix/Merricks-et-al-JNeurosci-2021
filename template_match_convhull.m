@@ -143,7 +143,7 @@ for n = 1:length(new)
         nPC = min(nPC,settings.max_pc); % no more than max_pc
         disp([9 9 'Using ' num2str(nPC) ' dimensions'])
         % calculate the PC scores for the new waveforms on the original unit
-        if ~centered
+        if ~settings.centered
             pc_post = spks * coef;
         else
             post_waves = spks - mean(spks,1);
