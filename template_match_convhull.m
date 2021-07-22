@@ -69,11 +69,11 @@ if ~isfield(new,'waveforms') || ~isfield(new,'times') || ~isfield(new,'channel')
 end
 
 % default settings:
-settings.prob_method = 'gmm';
+settings.prob_method = 'voltage';
 settings.threshold = 0;     % probability above which a spike is considered "matched"
 settings.total_pc = 95;     % number of PCs to use must explain this percentage of variance
 settings.max_pc = 5;        % maximum total PCs to use (help speed up processing at expense of variance explained)
-settings.centered = true;   % automatically center the PCA or not
+settings.centered = false;  % automatically center the PCA or not
 settings.joint = true;      % calculate the GMM on all channel units at once, or one-by-one?
 
 % assign user input (name, value pair) settings:
@@ -88,6 +88,13 @@ for v = 1:2:length(varargin)
         disp([9 'Not assigning ''' varargin{v} ''': not an input of gmm_match function']);
     end
 end
+
+% Which attributes to copy from the original SingleUnit objects: (could be
+% made a settings input variable, but this is more likely to be an advanced
+% user alteration, so keeping it out the way for now) Note that 'UID',
+% 'waveforms', 'times', and 'channel' are always copied so needn't be set
+% here.
+attr_copy = {'wideband','type','typeprob','threshold','extra','metrics'};
 
 % set up outputs:
 matched = MultipleUnits('patient',original.patient,'seizure',original.seizure);
@@ -168,8 +175,15 @@ for n = 1:length(new)
         for u = 1:length(unq)
             if exist('inhull','file')
                 clusPts = pc(assigns == unq(u),1:nPC);
-                tol = 1.e-13*mean(abs(clusPts(:)));
-                matchedIDs = inhull(pc_post(:,1:nPC),clusPts,[],tol);
+                if size(clusPts,1) < nPC + 1
+                    warning(['Not enough spikes for ' num2str(nPC) '-dimensional geometry on unit ' num2str(u) ' on channel ' chanstr ', skipping'])
+                    matchedIDs = [];
+                    noGM = true;
+                else
+                    tol = 1.e-13*mean(abs(clusPts(:)));
+                    matchedIDs = inhull(pc_post(:,1:nPC),clusPts,[],tol);
+                    noGM = false;
+                end
             else
                 %TODO: replace this error with a warning that we're limited
                 %      to 3 dimensions, and use convhull instead. (Could
@@ -195,18 +209,22 @@ for n = 1:length(new)
                         inner_probs = clusterGM{g}.pdf(pc_post(matchedIDs,1:nPC))./clusterGM{g}.pdf(clusterGM{g}.mu);
                         UIDtranslation(u) = units(unq(g)).UID;
                     else
-                        % for each unit, fit the GMM on requested number of PCs, and calculate
-                        % the probabilities for each new spike for that unit:
-                        these_pc = pc(assigns == unq(u),1:nPC);
-                        % fitgmdist is overkill when only using 1 cluster, but it's speedy:
-                        gmd = fitgmdist(these_pc,1);
-                        %{
-                        % expand the fit by the requested amount:
-                        big_gmd = gmdistribution(gmd.mu, settings.GMM_expansion * gmd.Sigma);
-                        %}
-                        % calculate the match probabilities, scaling the Gaussian such that
-                        % a waveform at its exact mean has a match probability of 1:
-                        inner_probs = gmd.pdf(pc_post(matchedIDs,1:nPC))./gmd.pdf(gmd.mu);
+                        if ~noGM
+                            % for each unit, fit the GMM on requested number of PCs, and calculate
+                            % the probabilities for each new spike for that unit:
+                            these_pc = pc(assigns == unq(u),1:nPC);
+                            % fitgmdist is overkill when only using 1 cluster, but it's speedy:
+                            gmd = fitgmdist(these_pc,1);
+                            %{
+                            % expand the fit by the requested amount:
+                            big_gmd = gmdistribution(gmd.mu, settings.GMM_expansion * gmd.Sigma);
+                            %}
+                            % calculate the match probabilities, scaling the Gaussian such that
+                            % a waveform at its exact mean has a match probability of 1:
+                            inner_probs = gmd.pdf(pc_post(matchedIDs,1:nPC))./gmd.pdf(gmd.mu);
+                        else
+                            inner_probs = zeros(1,length(find(assigns == unq(u)))); % can't calculate using this method, fail safe with zero.
+                        end
                         % unit identities are lost in the joint-GMM method,
                         % so we have to use g from here on out. This method
                         % doesn't lose identity, so g == u:
@@ -230,27 +248,38 @@ for n = 1:length(new)
             matchW(inner_probs < settings.threshold,:) = [];
             matchT(inner_probs < settings.threshold) = [];
             
-            match_probs = inner_probs(inner_probs > settings.threshold);
-            
-            
-            temp_unit = SingleUnit('patient',original.patient,'seizure',original.seizure);
-            temp_unit.UID = units(unq(g)).UID;
-            temp_unit.waveforms = matchW;
-            temp_unit.times = matchT;
-            temp_unit.channel = units(unq(g)).channel;
-            temp_unit.type = units(unq(g)).type;
-            temp_unit.extra.probabilities = match_probs;
-            temp_unit.extra.mean_original_waveform = mean(units(unq(g)).waveforms);
-            temp_unit.extra.sd_original_waveform = std(units(unq(g)).waveforms);
-            
-            if settings.joint && strcmp(settings.prob_method,'gmm')
-                temp_unit.extra.raw_ID_prob_UIDs = UIDtranslation;
-                temp_unit.extra.raw_ID_probs = id_probs(matchedIDs,:);
-                % i.e. probability that spike came from raw_ID_prob_UIDs(1)
-                % is raw_ID_probs(n,1)
+            if ~isempty(matchT)
+                match_probs = inner_probs(inner_probs > settings.threshold);
+
+                % Matlab passes classes that are children of "handle" by
+                % reference, so can't just do new_unit = old_unit to copy
+                % attributes without subsequent changes to new_unit
+                % affecting old_unit:
+                temp_unit = SingleUnit('patient',original.patient,'seizure',original.seizure);
+                for a = 1:length(attr_copy)
+                    temp_unit.(attr_copy{a}) = units(unq(g)).(attr_copy{a});
+                end
+                temp_unit.UID = units(unq(g)).UID;
+                temp_unit.waveforms = matchW;
+                temp_unit.times = matchT;
+                temp_unit.channel = units(unq(g)).channel;
+                %temp_unit.extra.probabilities = match_probs;
+                if isempty(temp_unit.metrics)
+                    temp_unit.metrics = UnitMetrics();
+                end
+                temp_unit.metrics.matchConfidence = match_probs;
+                temp_unit.extra.mean_original_waveform = mean(units(unq(g)).waveforms);
+                temp_unit.extra.sd_original_waveform = std(units(unq(g)).waveforms);
+
+                if settings.joint && strcmp(settings.prob_method,'gmm')
+                    temp_unit.extra.raw_ID_prob_UIDs = UIDtranslation;
+                    temp_unit.extra.raw_ID_probs = id_probs(matchedIDs,:);
+                    % i.e. probability that spike came from raw_ID_prob_UIDs(1)
+                    % is raw_ID_probs(n,1)
+                end
+
+                matched.add_unit(temp_unit);
             end
-            
-            matched.add_unit(temp_unit);
         end
         
     end
